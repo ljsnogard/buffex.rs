@@ -1,0 +1,30 @@
+[package]
+name = "buffex"
+version = "0.3.0"
+edition = "2024"
+
+authors = ["lino <lino_snsalias@outlook.com>"]
+description = "BUFFer EXtensions: ring buffer and buffer chaining."
+repository = "https://github.com/ljsnogard/buffex"
+keywords = ["buffer", "io"]
+categories = ["algorithms", "no-std"]
+license = "MIT/Apache-2.0"
+
+[dependencies]
+abs_async_iter = { git = "https://gitee.com/lino_snsalias/abs_async_iter.git" }
+abs_buff = { git = "https://gitee.com/lino_snsalias/abs_buff.git", branch = "dev/0.3.0" }
+atomic_sync = { git = "https://gitee.com/lino_snsalias/atomic_sync.git", branch = "dev/0.3.0" }
+# mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
+
+[dev-dependencies]
+env_logger = { version = "0.11.*" }
+log = { version = "0.4.*" }
+rand = { version = "0.10.*" }
+tokio = { version = "1", features = ["full"] }
+futures-lite = { version = "2" }
+# 单线程异步运行时测试环境：验证 circular_buff 的同步泵（block_on）在
+# 不同单线程运行时（tokio current_thread / compio / futures-executor）内
+# 驱动主动端设备时能否正常运行。
+compio = { version = "0.19.*", features = ["fs", "macros", "time"] }
+futures-executor = "0.3"
+futures-util = "0.3"

@@ -1,0 +1,31 @@
+# buffex_smol_adapt 的测试配方：每条 cargo 都带 `timeout`，避免意外挂起把验收拖死。
+#
+# 超时口径（仓库根 `AGENTS.md` 纪律 12）：
+# - 单元 / 集成测试：60 秒；
+# - 文档测试：120 秒；
+# - 静态检查：300 秒。
+#
+# 用 `--manifest-path` 传绝对路径，配方从任何子目录调用都能跑。
+
+manifest := justfile_directory() / "Cargo.toml"
+
+# 列出可用配方
+default:
+    @{{just_executable()}} --list
+
+# 单元与集成测试（60 秒超时）
+test:
+    timeout 60 cargo test --tests --offline --manifest-path {{manifest}}
+
+# 文档测试（120 秒超时）
+test-doc:
+    timeout 120 cargo test --doc --offline --manifest-path {{manifest}}
+
+# 静态检查：clippy 视为错误（300 秒超时）
+clippy:
+    timeout 300 cargo clippy --all-targets --offline --manifest-path {{manifest}} -- -D warnings
+
+# 全量验收：静态检查 → 单元/集成 → 文档（串行，各自带超时）
+test-all: clippy test test-doc
+    @echo
+    @echo "== buffex_smol_adapt 全部验收通过 =="

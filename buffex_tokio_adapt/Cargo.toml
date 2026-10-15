@@ -1,0 +1,21 @@
+[package]
+name = "buffex_tokio_adapt"
+version = "0.3.0"
+edition = "2024"
+description = "把任意 tokio AsyncRead/AsyncWrite 设备接上 buffex 环的 TrBuffRead/TrBuffWrite 适配器。"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+abs_art = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
+# **本线程自驱动**（`BuffWrite::try_new_local`）要的投递点：`abs_art-tokio` 的
+# `LocalScope` 就是本线程那条 `LocalSet` 的别名（`TrLocalScope::spawn_local` 不要求
+# `Send`，因此能把「环 → 设备」的泵挂在本线程上跑）。
+abs_art-tokio = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
+abs_buff_tokio_adapt = { git = "https://gitee.com/lino_snsalias/abs_buff_tokio_adapt.git" }
+buffex = { path = "../buffex" }
+mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
+# 只用到 `runtime::Handle::try_current()`（`not_in_runtime_` 判定）。
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util"] }

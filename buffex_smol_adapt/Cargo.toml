@@ -1,0 +1,24 @@
+[package]
+name = "buffex_smol_adapt"
+version = "0.3.0"
+edition = "2024"
+description = "把任意 smol（futures-lite）AsyncRead/AsyncWrite 设备接上 buffex 环的 TrBuffRead/TrBuffWrite 适配器。"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+# `smol::io` 就是 `futures_lite::io` 的重导出，设备 trait 的正身在这里。
+futures-lite = "2.6.*"
+
+# **本线程自驱动**（`BuffWrite::try_new_local`）要的投递点：`abs_art-smol` 的
+# `LocalScope` 就是本线程那条 `LocalExecutor` 的别名（`TrLocalScope::spawn_local`
+# 不要求 `Send`，因此能把「环 → 设备」的泵挂在本线程上跑）。
+abs_art = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
+abs_art-smol = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
+
+buffex = { path = "../buffex" }
+mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
+
+[dev-dependencies]
+# 集成测试要一对真实的 UNIX domain socket 设备，以及一个驱动场景的 `block_on`。
+async-net = "2.0.*"
+smol = "2.0.*"

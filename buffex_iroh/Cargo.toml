@@ -1,0 +1,22 @@
+[package]
+edition = "2024"
+name = "buffex_iroh"
+version = "0.1.0"
+
+authors = ["lino <lino_snsalias@outlook.com>"]
+description = "Send or receive data through a circular buffer attached to the IROH stream."
+license = "MIT/Apache-2.0"
+readme = "README.md"
+
+[dependencies]
+buffex = { path = "../buffex" }
+abs_buff_tokio_adapt = { git = "https://gitee.com/lino_snsalias/abs_buff_tokio_adapt.git" }
+abs_art-bridge = { version = "0.2.2", features = ["backend-tokio"] }
+anylr = { git = "https://gitee.com/lino_snsalias/anylr.rs.git", branch = "dev/0.2.0" }
+# `build_async` 的驱动：同步构造（`try_new`）用最小单线程执行器轮询构建 future。
+futures-lite = { version = "2" }
+
+anyhow = "1"
+thiserror = "2"
+iroh = "1.3.*"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

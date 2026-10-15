@@ -1,0 +1,41 @@
+# 实验专用 crate：验证「tokio 进程 ↔ compio 进程」在 TCP / UNIX domain socket
+# 上用 `buffex_tokio_adapt` / `buffex_compio_adapt` 的 `BuffRead` / `BuffWrite`
+# 收发时的行为与吞吐。
+#
+# 注意：本 crate 是与仓库里其它 workspace 完全隔离的独立 workspace，不应被加入
+# 其它 workspace（它会同时引用两个适配器 crate）。
+[package]
+name = "buffex_sock_uds_demo"
+version = "0.3.0"
+edition = "2024"
+description = "两个进程分别以 buffex_tokio_adapt / buffex_compio_adapt 为通信底座，在 TCP 与 UNIX domain socket 上做收发与 benchmark 的 demo。"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+# `buffex` 与两个适配器都走**本机同级路径**：适配器刚改过「读侧有数据就交付 /
+# 写侧可自驱动」两处语义（`tests/read_semantics_.rs` 钉的就是这两条），那些改动还没推
+# 到 gitee；走 git 依赖只会拿到旧 commit，本仓的特征测试会与实现不符。
+# 三者必须与 `buffex` / `mm_ptr` / `abs_art` 同源同分支。
+buffex = { path = "../buffex" }
+buffex_tokio_adapt = { path = "../buffex_tokio_adapt" }
+buffex_compio_adapt = { path = "../buffex_compio_adapt" }
+mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
+
+compio = { version = "0.19.*", features = ["macros", "net", "runtime", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+
+# 本 crate 名称是下划线形式，nightly cargo 的 kebab-case 命名 lint 在这里纯属噪音。
+[lints.cargo]
+non_kebab_case_bins = "allow"
+
+[[bin]]
+name = "peer_tokio"
+path = "src/bin/peer_tokio.rs"
+
+[[bin]]
+name = "peer_compio"
+path = "src/bin/peer_compio.rs"
+
+[[bin]]
+name = "bench_harness"
+path = "src/bin/bench_harness.rs"

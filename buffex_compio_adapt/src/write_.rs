@@ -40,7 +40,7 @@ use std::rc::Rc;
 use compio::{io::AsyncWrite, runtime::JoinHandle};
 
 use abs_buff::{
-    Demand, TrBuffWrite, TrBuffTryWrite,
+    Demand, TrBuffFlush, TrBuffTryFlush, TrBuffTryWrite, TrBuffWrite,
     buffer::TrProducerState,
     buffer::TrBuffSegmRef,
     error::WriteErrTag,
@@ -314,6 +314,71 @@ where
 {
     fn producer_state(&self) -> Option<(usize, bool)> {
         self.tx_.producer_state()
+    }
+}
+
+impl<W, C, S> TrBuffTryFlush<u8> for BuffWrite<W, C, S>
+where
+    W: AsyncWrite + 'static,
+    C: TrAllocConfig,
+    S: Borrow<Ring<RingBufOf<C>, u8>> + 'static,
+{
+    /// 同步查一次「是否已全部交给设备」（try-once）。
+    ///
+    /// compio 侧的搬运**完全在后台泵**里（构造时就 `spawn`），因此本函数不推进、也不
+    /// 等待：环已空即 `Ok(())`（由模块文档的不变式，等价于「设备已收下」），仍有数据即
+    /// `Stuffed(pending)`，泵报过错即 `Closing`。要等它排空请用
+    /// [`Self::flush_async`]。
+    fn try_flush(&mut self) -> Result<(), Self::Err> {
+        if self.ctl_.has_write_err_() {
+            return Result::Err(ProducerError::Closing);
+        }
+        let pending = self.ring_.borrow().data_size();
+        if pending == 0usize {
+            Result::Ok(())
+        } else {
+            Result::Err(ProducerError::Stuffed(pending))
+        }
+    }
+
+    /// 封口：置生产端关闭位并唤醒 park 中的后台泵（幂等、不阻塞）。
+    ///
+    /// 泵被唤醒后会正常收尾：排空剩余数据 → `shutdown` 设备 → 退出。要**等**它收尾完
+    /// 并用上设备错误，用 [`Self::close_async`]。
+    fn close(&mut self) -> Result<(), Self::Err> {
+        self.tx_.close();
+        if self.ctl_.has_write_err_() {
+            return Result::Err(ProducerError::Closing);
+        }
+        Result::Ok(())
+    }
+}
+
+impl<W, C, S> TrBuffFlush<u8> for BuffWrite<W, C, S>
+where
+    W: AsyncWrite + 'static,
+    C: TrAllocConfig,
+    S: Borrow<Ring<RingBufOf<C>, u8>> + 'static,
+{
+    type FlushAsync<'f> = BuffWriteFlushAsync<'f, 'f, W, C, S>
+    where
+        Self: 'f;
+
+    /// 等后台泵把环里已提交的字节全部交给设备（异步，可取消）。
+    #[inline]
+    fn flush_async(&mut self) -> Self::FlushAsync<'_> {
+        BuffWrite::flush_async(self)
+    }
+
+    type CloseAsync<'f>
+        = BuffWriteCloseAsync<'f, 'f, W, C, S>
+    where
+        Self: 'f;
+
+    /// 排空剩余数据、`shutdown` 设备并等后台泵退出（异步，可取消）。
+    #[inline]
+    fn close_async(&mut self) -> Self::CloseAsync<'_> {
+        BuffWrite::close_async(self)
     }
 }
 

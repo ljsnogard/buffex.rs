@@ -9,17 +9,23 @@
 //! | 构造入口 | 谁在驱动「环 → 设备」 | 适用场合 |
 //! | --- | --- | --- |
 //! | [`BuffWrite::try_new`] | **调用方**：每次 `try_write` / `write_async` 顺带推一轮，`flush_async` / `close_async` 负责收尾 | 调用方自己就是搬运循环（单次收发、benchmark、测试里的假设备） |
-//! | [`BuffWrite::try_new_local`] | **后台泵**：构造时经 `abs_art-smol` 的 `LocalScope` 投到**本线程**那条 `LocalExecutor` 上，此后自行搬运 | 上层只把本适配器当 `TrBuffWrite` 用、**不会**替它调 flush 的协议栈（例如 `smux_v1` 的写泵） |
+//! | [`BuffWrite::try_new_local`] | **后台泵**：构造时经 `abs_art-smol` 的 `LocalScope` 投到**本线程**那条 `LocalExecutor` 上，此后自行搬运 | 只借段、**不保证**每次都会走收尾入口的协议栈（例如 `smux_v1`：它在握手每帧后调 `TrBuffFlush::flush_async`，数据面则可能长时间 park） |
 //!
 //! ## 为什么需要第二种：`TrBuffWrite` 没有 flush 钩子
 //!
 //! 按需驱动形态的搬运是**借段的副作用**：`write_async` 先冲一轮「环 → 设备」，再借出
 //! 空段。上层写泵一旦「把最后一个分片提交进环、然后挂到『等下层有新字节』」，那个分片
 //! 就再也没人搬——它在环里等着下一次 `write_async`，而下一次永远不来了。`smux_v1` 的
-//! 写泵正是这个形状（连接写环一空就 park），于是握手帧只出去一部分、连接静止。
+//! 写泵曾经正是这个形状（连接写环一空就 park），于是握手帧只出去一部分、连接静止。
+//! 现在 `smux_v1` 会在握手每帧后与连接退出时按 `TrBuffFlush` 收尾，因此**它不再是
+//! 这种协议栈**；本形态仍然适用于"完全不做收尾"的上层。
 //!
 //! 自驱动形态把这个缺口补上：后台泵**独立于调用方**地循环「借读段（环空则 park）→
 //! 写设备 → 提交」，因此「提交进环」本身就等于「迟早送达设备」，不需要谁记得调 flush。
+//!
+//! 另一条补法（`2026-10` 起可用）：协议栈按 `abs_buff::TrBuffFlush` 在收尾时显式
+//! `flush_async` / `close_async`。`smux_v1` 现在正是这样做的——握手每写出一帧就 flush
+//! 一次、连接退出时封口——因此**它既可以配 `try_new`，也可以配 `try_new_local`**。
 //!
 //! ## 为什么后台泵挂在 `LocalScope` 上，而不是 `smol::spawn`
 //!
@@ -110,7 +116,7 @@ use futures_lite::io::AsyncWrite;
 use abs_art::{SPAWN_LOCAL, TrJoinHandle, TrLocalScope};
 use abs_art_smol::{JoinHandle, Runtime};
 use abs_buff::{
-    Demand, TrBuffWrite, TrBuffTryWrite,
+    Demand, TrBuffFlush, TrBuffTryFlush, TrBuffTryWrite, TrBuffWrite,
     buffer::{TrBuffSegmRef, TrProducerState},
     error::{TaggedError, TrErrorWrapper, WriteErrTag},
     x_deps::{abs_cancel, anylr},
@@ -297,8 +303,10 @@ where
     /// 移进后台泵，泵经 `abs_art-smol` 的 [`LocalScope`](abs_art_smol::LocalScope) 投到
     /// **本线程**那条 `LocalExecutor` 上，此后自行把环里的字节搬给设备。
     ///
-    /// 这是「上层协议栈只会借段、不会替适配器调 flush」时的正确入口（例如
-    /// `smux_v1` 的写泵）。
+    /// 这是「上层协议栈只会借段、且**不保证**在收尾时调
+    /// [`TrBuffFlush`](abs_buff::TrBuffFlush)」时的正确入口；自 `2026-10` 起
+    /// `smux_v1` 会在握手每帧后与连接退出时收尾，**两种入口都能用**，本入口省掉的是
+    /// 「谁来推那一跳」的显式约定。
     ///
     /// # 与 tokio 侧的差别
     ///
@@ -624,6 +632,73 @@ where
 {
     fn producer_state(&self) -> Option<(usize, bool)> {
         self.tx_.producer_state()
+    }
+}
+
+impl<W, C, S> TrBuffTryFlush<u8> for BuffWrite<W, C, S>
+where
+    W: AsyncWrite + Unpin,
+    C: TrAllocConfig,
+    S: Borrow<Ring<RingBufOf<C>, u8>>,
+{
+    /// 同步冲一轮「环 → 设备」（try-once）。
+    ///
+    /// 语义与 tokio 侧逐字相同：按需形态推一轮（环仍非空即 `Stuffed`、设备报错即
+    /// `Closing`）；自驱动形态不推进也不等待（环空即 `Ok`）。
+    fn try_flush(&mut self) -> Result<(), Self::Err> {
+        if matches!(&self.drive_, Drive_::Manual { .. }) {
+            let _ = poll_once_(self.pump_());
+        }
+        if self.err_.is_some() {
+            return Result::Err(ProducerError::Closing);
+        }
+        let pending = self.ring_.borrow().data_size();
+        if pending == 0usize {
+            Result::Ok(())
+        } else {
+            Result::Err(ProducerError::Stuffed(pending))
+        }
+    }
+
+    /// 封口：置生产端关闭位并唤醒 park 在环读端上的排空方（幂等、不阻塞）。
+    ///
+    /// 「排空 + 关闭设备 + 等泵退出」由 [`Self::close_async`] 完成；按需形态下被唤醒的
+    /// 排空方是调用方自己的搬运循环。
+    fn close(&mut self) -> Result<(), Self::Err> {
+        self.tx_.close();
+        if self.err_.is_some() {
+            return Result::Err(ProducerError::Closing);
+        }
+        Result::Ok(())
+    }
+}
+
+impl<W, C, S> TrBuffFlush<u8> for BuffWrite<W, C, S>
+where
+    W: AsyncWrite + Unpin,
+    C: TrAllocConfig,
+    S: Borrow<Ring<RingBufOf<C>, u8>>,
+{
+    type FlushAsync<'f>
+        = BuffWriteFlushOpAsync<'f, 'f, W, C, S>
+    where
+        Self: 'f;
+
+    /// 等「环 → 设备」的搬运把已提交字节全部交出去（异步，可取消）。
+    #[inline]
+    fn flush_async(&mut self) -> Self::FlushAsync<'_> {
+        BuffWrite::flush_async(self)
+    }
+
+    type CloseAsync<'f>
+        = BuffWriteCloseOpAsync<'f, 'f, W, C, S>
+    where
+        Self: 'f;
+
+    /// 排空剩余数据、关闭设备并等自驱动泵退出（异步，可取消）。
+    #[inline]
+    fn close_async(&mut self) -> Self::CloseAsync<'_> {
+        BuffWrite::close_async(self)
     }
 }
 

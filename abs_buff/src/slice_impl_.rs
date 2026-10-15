@@ -14,7 +14,7 @@ use abs_cancel::{TrCancellationToken, TrMayCancel};
 use anylr::SomeOf;
 
 use crate::{
-    Demand, TrBuffRead, TrBuffTryRead, TrBuffTryWrite, TrBuffWrite,
+    Demand, TrBuffFlush, TrBuffRead, TrBuffTryFlush, TrBuffTryRead, TrBuffTryWrite, TrBuffWrite,
     buffer::{
         SegmMut, SegmReclaim, SegmRef,
         TrBuffSegmMut, TrBuffSegmRef, TrBuffSegmView,
@@ -607,6 +607,43 @@ impl<T> TrBuffWrite<T> for &mut [T] {
         ReadySegm::new(SomeOf::new_left(BorrowedWriteSegm::with_limit(
             self, max_len,
         )))
+    }
+}
+
+impl<T> TrBuffTryFlush<T> for &mut [T] {
+    /// 恒等成功：借用切片本身就是最终落点，提交即"已交给下游"。
+    fn try_flush(&mut self) -> Result<(), Self::Err> {
+        Result::Ok(())
+    }
+
+    /// 封口：把借用到的长度**推进到零**，从而让后续 `try_write` 得到
+    /// [`BorrowedSliceError::Empty`]（这正是本类型表达"写端已关闭"的方式）。
+    ///
+    /// 幂等：第二次调用时长度已是 0，仍是同一个结果。
+    fn close(&mut self) -> Result<(), Self::Err> {
+        *self = &mut [];
+        Result::Ok(())
+    }
+}
+
+impl<T> TrBuffFlush<T> for &mut [T] {
+    /// 立即就绪：没有"还在路上"的字节。
+    type FlushAsync<'f> = core::future::Ready<Result<(), Self::Err>>
+    where
+        Self: 'f;
+
+    fn flush_async(&mut self) -> Self::FlushAsync<'_> {
+        core::future::ready(Result::Ok(()))
+    }
+
+    type CloseAsync<'f>
+        = core::future::Ready<Result<(), Self::Err>>
+    where
+        Self: 'f;
+
+    fn close_async(&mut self) -> Self::CloseAsync<'_> {
+        let _ = TrBuffTryFlush::close(self);
+        core::future::ready(Result::Ok(()))
     }
 }
 

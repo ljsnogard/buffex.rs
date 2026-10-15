@@ -38,3 +38,36 @@ where
         demand: &'f Demand<usize>,
     ) -> Self::WriteAsync<'f>;
 }
+
+pub trait TrBuffTryFlush<T = u8>
+where
+    Self: TrBuffTryWrite<T>,
+{
+    fn try_flush(&mut self) -> Result<(), Self::Err>;
+
+    /// An idempotent way to tell the other side that, the write end is sealed
+    /// and will sends no more data.
+    fn close(&mut self) -> Result<(), Self::Err>;
+}
+
+
+/// A kind of buffer that has downstream consumer.
+pub trait TrBuffFlush<T = u8>
+where
+    Self: TrBuffWrite<T> + TrBuffTryFlush<T>,
+{
+    type FlushAsync<'f>: TrMayCancel<'f, MayCancelOutput =
+        Result<(), <Self as TrBuffTryWrite<T>>::Err>>
+    where
+        Self: 'f;
+
+    /// Make sure all the data in the buffer is delivered to the stream consumer.
+    fn flush_async(&mut self) -> Self::FlushAsync<'_>;
+
+    type CloseAsync<'f>: TrMayCancel<'f, MayCancelOutput =
+        Result<(), <Self as TrBuffTryWrite<T>>::Err>>
+    where
+        Self: 'f;
+
+    fn close_async(&mut self) -> Self::CloseAsync<'_>;
+}

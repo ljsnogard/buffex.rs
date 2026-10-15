@@ -30,7 +30,7 @@ pub use reader_::{TrBuffRead, TrBuffTryRead};
 /// 立即就绪的 `Future`，产出 `SomeOf<S, E>`；实现 `TrInput` / `TrOutput` 时
 /// 可直接用它作为 `ReadAsync<'f>` / `WriteAsync<'f>` 的具体类型。
 pub use slice_impl_::ReadySegm;
-pub use writer_::{TrBuffTryWrite, TrBuffWrite};
+pub use writer_::{TrBuffFlush, TrBuffTryFlush, TrBuffTryWrite, TrBuffWrite};
 
 pub mod x_deps {
     pub use abs_cancel;

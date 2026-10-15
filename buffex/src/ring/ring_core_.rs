@@ -1158,3 +1158,64 @@ where
         RingWriter::write_async(self, demand)
     }
 }
+
+/// 全被动环作为**流写半边**时的收尾语义。
+///
+/// # 为什么是"恒等成功 + 封口转发"
+///
+/// `abs_buff` 的 [`TrBuffTryFlush`] / [`TrBuffFlush`] 把「已提交字节是否都交给了下游」
+/// 这件事变成契约。对**纯内存环**而言，下游就是环本身：字节一旦提交（段 drop 时
+/// `advance_write`）就已经"交出"，因此
+///
+/// * `try_flush` 恒等成功、`flush_async` 立即就绪；
+/// * `close` 转发 [`RingWriter::close`]——置 `PRODUCER_CLOSED` 并**唤醒 park 在环读端上
+///   的排空方**。协议栈（如 `smux_v1`）退出时因此能主动封口，而不必依赖"丢弃写半边时
+///   恰好有人记得唤醒"。
+///
+/// [`TrBuffTryFlush`]: abs_buff::TrBuffTryFlush
+/// [`TrBuffFlush`]: abs_buff::TrBuffFlush
+impl<S, B, T> abs_buff::TrBuffTryFlush<T> for RingWriter<S, B, T>
+where
+    S: Borrow<Ring<B, T>>,
+    B: BorrowMut<[MaybeUninit<T>]>,
+{
+    #[inline]
+    fn try_flush(&mut self) -> Result<(), Self::Err> {
+        Result::Ok(())
+    }
+
+    #[inline]
+    fn close(&mut self) -> Result<(), Self::Err> {
+        RingWriter::close(self);
+        Result::Ok(())
+    }
+}
+
+impl<S, B, T> abs_buff::TrBuffFlush<T> for RingWriter<S, B, T>
+where
+    S: Borrow<Ring<B, T>>,
+    B: BorrowMut<[MaybeUninit<T>]>,
+{
+    /// 立即就绪：纯内存环没有"还在路上"的字节。
+    type FlushAsync<'f>
+        = core::future::Ready<Result<(), ProducerError<usize>>>
+    where
+        Self: 'f;
+
+    #[inline]
+    fn flush_async(&mut self) -> Self::FlushAsync<'_> {
+        core::future::ready(Result::Ok(()))
+    }
+
+    /// 与同步 [`abs_buff::TrBuffTryFlush::close`] 同义：封口不需要等待。
+    type CloseAsync<'f>
+        = core::future::Ready<Result<(), ProducerError<usize>>>
+    where
+        Self: 'f;
+
+    #[inline]
+    fn close_async(&mut self) -> Self::CloseAsync<'_> {
+        RingWriter::close(self);
+        core::future::ready(Result::Ok(()))
+    }
+}

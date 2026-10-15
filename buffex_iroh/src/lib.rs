@@ -29,8 +29,8 @@
 #![feature(impl_trait_in_assoc_type)]
 
 pub mod device;
-mod reader;
-mod writer;
+mod reader_;
+mod writer_;
 
-pub use reader::IrohReader;
-pub use writer::IrohWriter;
+pub use reader_::IrohReader;
+pub use writer_::IrohWriter;

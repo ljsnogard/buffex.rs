@@ -1,0 +1,20 @@
+[package]
+edition = "2024"
+name = "abs_buff"
+version = "0.3.0"
+
+description = "ABStraction of BUFFered IO"
+repository = "https://github.com/ljsnogard/abs_buff"
+keywords = ["IO", "buffer"]
+categories = ["no-std"]
+license = "MIT/Apache-2.0"
+
+[dependencies]
+anylr = { git = "https://gitee.com/lino_snsalias/anylr.rs.git", branch = "dev/0.2.0" }
+abs_cancel = { git = "https://gitee.com/lino_snsalias/abs_cancel-rs.git", branch = "dev/0.2.0" }
+gen_mcf2 = { git = "https://gitee.com/lino_snsalias/gen_mcf2.rs.git", branch = "feat/vis-for-new" }
+
+funty = { version = "3.0.0-rc2", default-features = false }
+
+[dev-dependencies]
+compio = { version = "0.19.*", features = ["fs", "macros", "time"] }

@@ -1,0 +1,14 @@
+[package]
+name = "abs_buff_tokio_adapt"
+version = "0.3.0"
+edition = "2024"
+description = "Tokio AsyncRead/AsyncWrite adapters for abs_buff TrInput/TrOutput."
+license = "MIT/Apache-2.0"
+
+[dependencies]
+abs_buff = { path = "../abs_buff" }
+tokio = { version = "1", features = ["io-util"] }
+
+[dev-dependencies]
+abs_buff-testkit = { git = "https://gitee.com/lino_snsalias/abs_buff-testkit.git" }
+tokio = { version = "1", features = ["macros", "rt", "net", "io-util"] }

@@ -1,5 +1,9 @@
 [workspace]
 members = [
+    "abs_buff",
+    "abs_buff-testkit",
+    "abs_buff_stdio_adapt",
+    "abs_buff_tokio_adapt",
     "buffex",
     "buffex_compio_adapt",
     "buffex_smol_adapt",
@@ -10,5 +14,5 @@ members = [
 resolver = "3"
 
 [workspace.package]
-authors = ["lino <lino_snsalias@outlook.com>"]
-license = "MIT/Apache-2.0"
+# authors = ["lino <lino_snsalias@outlook.com>"]
+# license = "MIT/Apache-2.0"

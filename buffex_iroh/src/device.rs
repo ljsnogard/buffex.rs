@@ -18,20 +18,15 @@ use tokio::sync::Mutex;
 
 use iroh::endpoint::{RecvStream, SendStream};
 
-// `abs_buff` 及其底层依赖（`abs_cancel` / `anylr`）经
-// `abs_buff_tokio_adapt::x_deps` 再导出，无需在 Cargo.toml 重复声明。
-use abs_buff_tokio_adapt::{
-    ReadAsInput, WriteAsOutput,
-    x_deps::abs_buff::{
-        error::{ReadErrTag, TaggedError, WriteErrTag},
-        gen_may_cancel_future,
-        io::{TrInput, TrOutput},
-        x_deps::{abs_cancel, anylr},
-    },
+use abs_buff::{
+    error::{ReadErrTag, TaggedError, WriteErrTag},
+    io::{TrInput, TrOutput},
 };
-use abs_cancel::TrCancellationToken;
+use abs_buff_tokio_adapt::{ReadAsInput, WriteAsOutput};
+use abs_cancel::{TrMayCancel, TrCancellationToken};
 use anylr::{SomeOf, some_of::SomeLR};
-use buffex::x_deps::abs_cancel::TrMayCancel;
+use buffex::x_deps::{abs_buff, abs_cancel, anylr, gen_mcf2};
+use gen_mcf2::gen_may_cancel_future;
 
 /// 输入设备的错误类型：tokio 读错误（`ReadErrTag::Propagated`）。
 pub type StreamInputErr = TaggedError<std::io::Error, ReadErrTag>;
@@ -60,28 +55,26 @@ impl StreamInput {
 }
 
 impl TrInput<u8> for StreamInput {
-    type ReadAsync<'f> = StreamInputReadAsync<'f>
-    where
-        Self: 'f,
-        u8: 'f;
+    type ReadAsync<'f> = StreamInputReadAsync<'f, 'f> where Self: 'f;
+
     type Err = StreamInputErr;
 
     fn read_async<'f>(
         &'f mut self,
         target: &'f mut [MaybeUninit<u8>],
     ) -> Self::ReadAsync<'f> {
-        StreamInputReadAsync(self, target)
+        StreamInputReadAsync::new(self, target)
     }
 }
 
 #[gen_may_cancel_future(StreamInputRead)]
-async fn stream_input_read_impl_<'f, C>(
+async fn stream_input_read_impl_<'f, K>(
     input: &'f mut StreamInput,
     target: &'f mut [MaybeUninit<u8>],
-    cancel: &'f mut C,
+    cancel: K,
 ) -> SomeOf<usize, StreamInputErr>
 where
-    C: TrCancellationToken + Clone,
+    K: TrCancellationToken,
 {
     // 传输经 abs_buff_tokio_adapt 的 AsyncRead 适配器（宏生成的 future）。
     let x = ReadAsInput::new(&mut input.stream)
@@ -130,29 +123,25 @@ impl StreamOutput {
 }
 
 impl TrOutput<u8> for StreamOutput {
-    type WriteAsync<'f>
-        = StreamOutputWriteAsync<'f>
-    where
-        Self: 'f,
-        u8: 'f;
+    type WriteAsync<'f> = StreamOutputWriteAsync<'f, 'f> where Self: 'f;
     type Err = StreamOutputErr;
 
     fn write_async<'f>(
         &'f mut self,
         source: &'f [MaybeUninit<u8>],
     ) -> Self::WriteAsync<'f> {
-        StreamOutputWriteAsync(self, source)
+        StreamOutputWriteAsync::new(self, source)
     }
 }
 
 #[gen_may_cancel_future(StreamOutputWrite)]
-async fn stream_output_write_impl_<'f, C>(
+async fn stream_output_write_impl_<'f, K>(
     output: &'f mut StreamOutput,
     source: &'f [MaybeUninit<u8>],
-    cancel: &'f mut C,
+    cancel: K,
 ) -> SomeOf<usize, StreamOutputErr>
 where
-    C: TrCancellationToken + Clone,
+    K: TrCancellationToken,
 {
     // 从共享槽位取出发送流，避免把 std MutexGuard 持有到 await 之后
     // （MutexGuard 不是 Send，会导致写 future 无法跨线程发送）。

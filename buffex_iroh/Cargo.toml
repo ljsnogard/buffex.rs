@@ -10,10 +10,11 @@ readme = "README.md"
 
 [dependencies]
 buffex = { path = "../buffex" }
-abs_buff_tokio_adapt = { git = "https://gitee.com/lino_snsalias/abs_buff_tokio_adapt.git" }
-abs_art-bridge = { version = "0.2.2", features = ["backend-tokio"] }
+abs_buff_tokio_adapt = { path = "../abs_buff_tokio_adapt" }
+abs_art-facde = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
 anylr = { git = "https://gitee.com/lino_snsalias/anylr.rs.git", branch = "dev/0.2.0" }
-# `build_async` 的驱动：同步构造（`try_new`）用最小单线程执行器轮询构建 future。
+mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
+
 futures-lite = { version = "2" }
 
 anyhow = "1"

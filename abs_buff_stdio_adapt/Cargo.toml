@@ -1,0 +1,44 @@
+[package]
+name = "abs_buff_stdio_adapt"
+version = "0.3.0"
+edition = "2024"
+description = "Adapter to make std::io::{Read, Write} fit for abs_buff TrBuffRead/TrBuffWrite."
+license = "MIT/Apache-2.0"
+
+[dependencies]
+abs_buff = { path = "../abs_buff" }
+# 后端选择统一交给门面：本 crate 只认 `abs_art_facade::Runtime`，不再直接依赖
+# `abs_art` / `abs_art-bridge`，也不再自己维护 `rt-*` 三选一。门面的缺省是 compio，
+# 因此本 crate 单独编译/自测时就是 compio；下游谁点亮 `abs_art-facade/rt-tokio`，
+# 全图（含这里的同步等待）就都是 tokio。
+abs_art-facade = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
+
+# 测试专用的依赖（不影响库本身）：
+# - `compio`：提供 `#[compio::test]` 属性，让测试运行在 compio 运行时上下文中
+#   （门面的缺省后端正是 compio）。
+# - `buffex`：SPSC 环形管道（`buffex::ring`）作为"异步数据流"的测试载体（实现
+#   abs_buff 的 TrBuffRead / TrBuffWrite，空/满时会真实地 Pending 等待对端）。
+[dev-dependencies]
+abs_buff-testkit = { git = "https://gitee.com/lino_snsalias/abs_buff-testkit.git" }
+buffex = { git = "https://gitee.com/lino_snsalias/buffex.git", branch = "dev/0.3.0" }
+compio = { version = "0.19.*", features = ["fs", "macros", "time"] }
+
+# `buffex` 与 `abs_buff-testkit` 都以上游 git 源的 `abs_buff` 为依赖，而本 crate
+# 以本地 path 依赖 `abs_buff`（见上）。若不在此把该 git 源替换成本地路径，Cargo
+# 会把两者当成**两个不同的 crate 实例**：`buffex` 的 `Ring` 实现的是 git 版
+# `abs_buff` 的 `TrBuffRead` / `TrBuffWrite`，无法与本 crate 使用的 path 版互操作
+# （`the trait bound ... is not satisfied` 并提示存在多个 abs_buff 版本）。
+# 这正是 `abs_buff-testkit` 文档给出的本地联调方式。
+# [patch."https://gitee.com/lino_snsalias/abs_buff.git"]
+# abs_buff = { path = "../abs_buff" }
+
+# **开发期**：`abs_art` 家族的本地联调。`TrLocalScope::block_on_local`（三段实现）正在
+# 本仓同级的 `abs_art/` 里改，尚未推到 gitee；不重定向的话 Cargo 只会拿到远端旧 commit，
+# 那时本 crate 调用的 `scope.block_on_local(..)` 根本不存在。
+# 这里只列本 crate 依赖图上真正会出现的三个（本 crate + bridge + 测试用的 compio 后端）；
+# 多列未使用的包会让 Cargo 报 "patch was not used in the crate graph"。
+# 推到 gitee 之后可以删除本段。
+# [patch."https://gitee.com/lino_snsalias/abs_art.git"]
+# abs_art = { path = "../abs_art/abs_art" }
+# abs_art-bridge = { path = "../abs_art/abs_art-bridge" }
+# abs_art-compio = { path = "../abs_art/abs_art-compio" }

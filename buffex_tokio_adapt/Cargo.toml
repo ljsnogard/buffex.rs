@@ -11,7 +11,7 @@ abs_art = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0
 # `LocalScope` 就是本线程那条 `LocalSet` 的别名（`TrLocalScope::spawn_local` 不要求
 # `Send`，因此能把「环 → 设备」的泵挂在本线程上跑）。
 abs_art-tokio = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
-abs_buff_tokio_adapt = { git = "https://gitee.com/lino_snsalias/abs_buff_tokio_adapt.git" }
+abs_buff_tokio_adapt = { path = "../abs_buff_tokio_adapt" }
 buffex = { path = "../buffex" }
 mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
 # 只用到 `runtime::Handle::try_current()`（`not_in_runtime_` 判定）。

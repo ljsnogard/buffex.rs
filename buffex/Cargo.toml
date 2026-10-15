@@ -12,9 +12,8 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 abs_async_iter = { git = "https://gitee.com/lino_snsalias/abs_async_iter.git" }
-abs_buff = { git = "https://gitee.com/lino_snsalias/abs_buff.git", branch = "dev/0.3.0" }
+abs_buff = { path = "../abs_buff" }
 atomic_sync = { git = "https://gitee.com/lino_snsalias/atomic_sync.git", branch = "dev/0.3.0" }
-# mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
 
 [dev-dependencies]
 env_logger = { version = "0.11.*" }

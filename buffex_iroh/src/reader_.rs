@@ -30,20 +30,15 @@ use tokio::sync::Mutex;
 use iroh::endpoint::RecvStream;
 
 use abs_buff::{
-    Demand, TrBuffRead, TrBuffTryRead, gen_may_cancel_future,
+    Demand, TrBuffRead, TrBuffTryRead,
+    buffer::TrConsumerState,
 };
 // `abs_buff` 及其底层依赖（`abs_cancel`）经 `abs_buff_tokio_adapt::x_deps`
 // 再导出，无需在 Cargo.toml 重复声明；`buffex` 是直接依赖。
-use abs_buff_tokio_adapt::x_deps::abs_buff;
 use abs_cancel::{TrCancellationToken, TrMayCancel};
 use anylr::SomeOf;
-use buffex::{
-    circular_buff::{
-        Consumer, CoreAlloc, DevProducer, ConsumerError,
-        builder::CircularBuffBuilder,
-    },
-    x_deps::{abs_cancel, mm_ptr},
-};
+use buffex::x_deps::{abs_buff, abs_cancel, gen_mcf2};
+use gen_mcf2::gen_may_cancel_future;
 use mm_ptr::Owned;
 
 use super::{
@@ -126,16 +121,28 @@ impl Drop for IrohReader {
     }
 }
 
-impl TrBuffRead<u8> for IrohReader {
-    type ReadAsync<'f> = IrohReaderReadAsync<'f> where Self: 'f;
+impl TrConsumerState for IrohReader {
+    fn consumer_state(&self) -> Option<(usize, bool)> {
+        todo!()
+    }
+}
 
+impl TrBuffTryRead<u8> for IrohReader {
     type SegmRef<'f> = <Inner as TrBuffRead<u8>>::SegmRef<'f> where Self: 'f;
 
     type Err = <Inner as TrBuffRead<u8>>::Err;
 
-    fn is_drained_closing(&self) -> bool {
-        self.rx.is_drained_closing() || self.eof_drained()
+    #[inline]
+    fn try_read<'f>(
+        &'f mut self,
+        demand: &'f Demand<usize>,
+    ) -> SomeOf<Self::SegmRef<'f>, Self::Err> {
+        IrohReader::try_read(self, demand)
     }
+}
+
+impl TrBuffRead<u8> for IrohReader {
+    type ReadAsync<'f> = IrohReaderReadAsync<'f> where Self: 'f;
 
     #[inline]
     fn read_async<'f>(
@@ -146,25 +153,15 @@ impl TrBuffRead<u8> for IrohReader {
     }
 }
 
-impl TrBuffTryRead<u8> for IrohReader {
-    #[inline]
-    fn try_read<'f>(
-        &'f mut self,
-        demand: &'f Demand<usize>,
-    ) -> SomeOf<Self::SegmRef<'f>, Self::Err> {
-        IrohReader::try_read(self, demand)
-    }
-}
-
 #[gen_may_cancel_future(IrohReaderTryNew)]
-async fn iroh_reader_try_new_impl_<'f, C>(
+async fn iroh_reader_try_new_impl_<'f, K>(
     _marker: &'f PhantomData<()>,
     stream: RecvStream,
     cap: usize,
-    cancel: &'f mut C,
+    cancel: K,
 ) -> Result<IrohReader, usize>
 where
-    C: TrCancellationToken + Clone,
+    K: TrCancellationToken,
 {
     let eof = Arc::new(AtomicBool::new(false));
     let err = Arc::new(Mutex::new(None));

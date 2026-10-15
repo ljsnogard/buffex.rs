@@ -27,7 +27,7 @@ mod test_support_;
 pub mod x_deps {
     pub use abs_async_iter;
     pub use abs_buff;
-    pub use abs_buff::x_deps::{abs_cancel, anylr};
+    pub use abs_buff::x_deps::{abs_cancel, anylr, gen_mcf2};
     pub use atomic_sync;
     pub use atomic_sync::x_deps::{abs_sync, atomex};
     pub use atomex::x_deps::funty;

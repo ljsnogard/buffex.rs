@@ -4,20 +4,21 @@ name = "buffex_iroh"
 version = "0.1.0"
 
 authors = ["lino <lino_snsalias@outlook.com>"]
-description = "Send or receive data through a circular buffer attached to the IROH stream."
+description = "Send or receive data through a ring buffer attached to the IROH stream."
 license = "MIT/Apache-2.0"
 readme = "README.md"
 
 [dependencies]
-buffex = { path = "../buffex" }
-abs_buff_tokio_adapt = { path = "../abs_buff_tokio_adapt" }
-abs_art-facde = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch = "dev/0.3.0" }
-anylr = { git = "https://gitee.com/lino_snsalias/anylr.rs.git", branch = "dev/0.2.0" }
-mm_ptr = { git = "https://gitee.com/lino_snsalias/mm_ptr.git", branch = "dev/0.2.0" }
-
-futures-lite = { version = "2" }
-
-anyhow = "1"
-thiserror = "2"
+# 「环 ↔ 设备」的搬运逻辑全在这里（按 `buffex::ring` 实现）；本 crate 只把 iroh 的
+# `RecvStream` / `SendStream` 当作 tokio 的 `AsyncRead` / `AsyncWrite` 设备接上去。
+# `abs_buff` / `abs_cancel` / `anylr` / `buffex` / `gen_mcf2` 这些依赖经它的
+# `x_deps` 使用，因此不必在此重复声明。
+buffex_tokio_adapt = { path = "../buffex_tokio_adapt" }
 iroh = "1.3.*"
+
+[dev-dependencies]
+# 集成测试从 `abs_buff_tokio_adapt::x_deps` 取 `abs_buff` 的 trait 与 `Demand`，
+# 保证与库内使用的是**同一个** `abs_buff` 实例；文档测试里则直接用 `abs_buff`。
+abs_buff = { path = "../abs_buff" }
+abs_buff_tokio_adapt = { path = "../abs_buff_tokio_adapt" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

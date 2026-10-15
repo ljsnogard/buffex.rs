@@ -15,7 +15,10 @@ const RESPONSE: &[u8] = b"hello from server through ring buffer";
 async fn write_all(writer: &mut IrohWriter, data: &[u8]) {
     let mut off = 0usize;
     while off < data.len() {
-        let demand = Demand::less_than(data.len() - off);
+        // 需求必须是「最多剩余字节数」，用的是**含端点**上界的 `no_more_than`。
+        // `less_than(n)` 是严格小于（上界 n-1）：剩余 1 字节时上界为 0，环会拒绝
+        // 借出 0 长度的段（`buffex` 的 `debug_assert!(take > 0)`），循环无法收尾。
+        let demand = Demand::no_more_than(data.len() - off);
         let Some(mut segm) = TrBuffWrite::write_async(writer, &demand)
         .await
         .pick_left() else {
@@ -23,13 +26,13 @@ async fn write_all(writer: &mut IrohWriter, data: &[u8]) {
         };
 
         let n = segm.least_count();
-        let mut staging: Vec<std::mem::MaybeUninit<u8>> = data[off..off + n]
+        let staging: Vec<std::mem::MaybeUninit<u8>> = data[off..off + n]
             .iter()
             .map(|&b| std::mem::MaybeUninit::new(b))
             .collect();
         // SAFETY: moving plain `u8` bytes into the ring segment is a bitwise
         // copy; the staging buffer owns nothing that needs dropping.
-        segm.move_items_from_buff(&mut staging);
+        segm.move_items_from_buff(&staging);
         off += n;
         drop(segm);
     }
@@ -38,7 +41,8 @@ async fn write_all(writer: &mut IrohWriter, data: &[u8]) {
 async fn read_exact(reader: &mut IrohReader, len: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(len);
     while out.len() < len {
-        let demand = Demand::less_than(len - out.len());
+        // 同 `write_all`：上界用含端点的 `no_more_than`，否则最后一字节永远借不到。
+        let demand = Demand::no_more_than(len - out.len());
         let res = TrBuffRead::read_async(reader, &demand).await;
         let right = res.as_ref().pick_right().map(|err| format!("{err:?}"));
         let Some(mut segm) = res.pick_left() else {
@@ -167,7 +171,7 @@ async fn try_interface_moves_data_without_spawn() {
         while got.len() < payload.len() {
             if let Some(mut segm) = TrBuffTryRead::try_read(
                 &mut reader,
-                &Demand::less_than(payload.len() - got.len()),
+                &Demand::no_more_than(payload.len() - got.len()),
             )
             .pick_left()
             {
@@ -199,18 +203,18 @@ async fn try_interface_moves_data_without_spawn() {
         while off < payload.len() {
             if let Some(mut segm) = TrBuffTryWrite::try_write(
                 &mut writer,
-                &Demand::less_than(payload.len() - off),
+                &Demand::no_more_than(payload.len() - off),
             )
             .pick_left()
             {
                 let n = segm.least_count();
-                let mut staging: Vec<std::mem::MaybeUninit<u8>> = payload
+                let staging: Vec<std::mem::MaybeUninit<u8>> = payload
                     [off..off + n]
                     .iter()
                     .map(|&b| std::mem::MaybeUninit::new(b))
                     .collect();
                 // SAFETY: u8 位拷贝。
-                segm.move_items_from_buff(&mut staging);
+                segm.move_items_from_buff(&staging);
                 off += n;
                 drop(segm);
             } else {
@@ -240,16 +244,16 @@ async fn try_interface_moves_data_without_spawn() {
         let mut writer = IrohWriter::try_new(client_send, 32).await.unwrap();
         let mut off = 0usize;
         while off < payload.len() {
-            let demand = Demand::less_than(payload.len() - off);
+            let demand = Demand::no_more_than(payload.len() - off);
             if let Some(mut segm) = writer.try_write(&demand).pick_left() {
                 let n = segm.least_count();
-                let mut staging: Vec<std::mem::MaybeUninit<u8>> = payload
+                let staging: Vec<std::mem::MaybeUninit<u8>> = payload
                     [off..off + n]
                     .iter()
                     .map(|&b| std::mem::MaybeUninit::new(b))
                     .collect();
                 // SAFETY: u8 位拷贝。
-                segm.move_items_from_buff(&mut staging);
+                segm.move_items_from_buff(&staging);
                 off += n;
                 drop(segm);
             } else {
@@ -263,7 +267,7 @@ async fn try_interface_moves_data_without_spawn() {
         while got.len() < payload.len() {
             if let Some(mut segm) = TrBuffTryRead::try_read(
                 &mut reader,
-                &Demand::less_than(payload.len() - got.len()),
+                &Demand::no_more_than(payload.len() - got.len()),
             )
             .pick_left()
             {
@@ -324,6 +328,11 @@ async fn try_write_shutdown_flushes_all_buffered_data() {
         .expect("bind server");
     let server_addr = server.addr();
 
+    // 收全方的回执：客户端必须等服务器确实收全，再关自己的端点。
+    // `Endpoint::close()` 不会等对端把「已经 finish、但还没送达」的尾部数据取走，
+    // 提前关闭会把它们一起掐掉（本文件第一个测试对此有同样的说明）。
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+
     let server_future = async move {
         let incoming = server
             .accept()
@@ -342,7 +351,7 @@ async fn try_write_shutdown_flushes_all_buffered_data() {
         while got.len() < server_payload.len() {
             if let Some(mut segm) = TrBuffTryRead::try_read(
                 &mut reader,
-                &Demand::less_than(server_payload.len() - got.len()),
+                &Demand::no_more_than(server_payload.len() - got.len()),
             )
             .pick_left()
             {
@@ -364,6 +373,7 @@ async fn try_write_shutdown_flushes_all_buffered_data() {
         }
         assert_eq!(got, server_payload, "server 必须收到完整载荷");
         reader.close_async().await;
+        let _ = done_tx.send(());
     };
 
     let client_future = async move {
@@ -386,15 +396,15 @@ async fn try_write_shutdown_flushes_all_buffered_data() {
             .unwrap();
         let mut off = 0usize;
         while off < payload.len() {
-            let demand = Demand::less_than(payload.len() - off);
+            let demand = Demand::no_more_than(payload.len() - off);
             if let Some(mut segm) = writer.try_write(&demand).pick_left() {
                 let n = segm.least_count();
-                let mut staging: Vec<std::mem::MaybeUninit<u8>> = payload
+                let staging: Vec<std::mem::MaybeUninit<u8>> = payload
                     [off..off + n]
                     .iter()
                     .map(|&b| std::mem::MaybeUninit::new(b))
                     .collect();
-                segm.move_items_from_buff(&mut staging);
+                segm.move_items_from_buff(&staging);
                 off += n;
                 drop(segm);
             } else {
@@ -402,7 +412,9 @@ async fn try_write_shutdown_flushes_all_buffered_data() {
             }
         }
         // 关键验证点：shutdown 必须先把环形缓冲中的残留数据异步排空。
-        writer.close_async().await;
+        assert!(writer.close_async().await, "shutdown 应干净收尾");
+        // 等服务器确认收全再关端点，否则尾部数据会被提前关闭的连接掐掉。
+        let _ = done_rx.await;
         client.close().await;
     };
 

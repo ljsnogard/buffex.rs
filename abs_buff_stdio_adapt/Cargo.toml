@@ -18,27 +18,13 @@ abs_art-facade = { git = "https://gitee.com/lino_snsalias/abs_art.git", branch =
 #   （门面的缺省后端正是 compio）。
 # - `buffex`：SPSC 环形管道（`buffex::ring`）作为"异步数据流"的测试载体（实现
 #   abs_buff 的 TrBuffRead / TrBuffWrite，空/满时会真实地 Pending 等待对端）。
+#
+# 这两个依赖一律走**本地 path**：本 crate、`abs_buff-testkit` 与 `buffex` 现在同属
+# 一个 workspace，path 依赖让 Cargo 只解析出**唯一一个** `abs_buff` 实例。若仍写
+# 上游 git 源，`buffex` 的 `Ring` 实现的就是 git 版 `abs_buff` 的
+# `TrBuffRead` / `TrBuffWrite`，与本 crate 使用的 path 版互不相干，测试会报
+# `the trait bound ... is not satisfied`（并提示存在多个 abs_buff 版本）。
 [dev-dependencies]
-abs_buff-testkit = { git = "https://gitee.com/lino_snsalias/abs_buff-testkit.git" }
-buffex = { git = "https://gitee.com/lino_snsalias/buffex.git", branch = "dev/0.3.0" }
+abs_buff-testkit = { path = "../abs_buff-testkit" }
+buffex = { path = "../buffex" }
 compio = { version = "0.19.*", features = ["fs", "macros", "time"] }
-
-# `buffex` 与 `abs_buff-testkit` 都以上游 git 源的 `abs_buff` 为依赖，而本 crate
-# 以本地 path 依赖 `abs_buff`（见上）。若不在此把该 git 源替换成本地路径，Cargo
-# 会把两者当成**两个不同的 crate 实例**：`buffex` 的 `Ring` 实现的是 git 版
-# `abs_buff` 的 `TrBuffRead` / `TrBuffWrite`，无法与本 crate 使用的 path 版互操作
-# （`the trait bound ... is not satisfied` 并提示存在多个 abs_buff 版本）。
-# 这正是 `abs_buff-testkit` 文档给出的本地联调方式。
-# [patch."https://gitee.com/lino_snsalias/abs_buff.git"]
-# abs_buff = { path = "../abs_buff" }
-
-# **开发期**：`abs_art` 家族的本地联调。`TrLocalScope::block_on_local`（三段实现）正在
-# 本仓同级的 `abs_art/` 里改，尚未推到 gitee；不重定向的话 Cargo 只会拿到远端旧 commit，
-# 那时本 crate 调用的 `scope.block_on_local(..)` 根本不存在。
-# 这里只列本 crate 依赖图上真正会出现的三个（本 crate + bridge + 测试用的 compio 后端）；
-# 多列未使用的包会让 Cargo 报 "patch was not used in the crate graph"。
-# 推到 gitee 之后可以删除本段。
-# [patch."https://gitee.com/lino_snsalias/abs_art.git"]
-# abs_art = { path = "../abs_art/abs_art" }
-# abs_art-bridge = { path = "../abs_art/abs_art-bridge" }
-# abs_art-compio = { path = "../abs_art/abs_art-compio" }

@@ -701,7 +701,7 @@ mod tests_ {
         // -- 读端 --
         let consumer = Consumer::<u8>::new();
         {
-            let mut park = std::boxed::Box::pin(
+            let mut park = core::pin::pin!(
                 consumer.park_async(&demand, &state).into_future(),
             );
             let mut cx = Context::from_waker(Waker::noop());
@@ -731,7 +731,7 @@ mod tests_ {
         let producer = Producer::<u8>::new();
         let stuck_demand = Demand::at_least(3);
         {
-            let mut park = std::boxed::Box::pin(
+            let mut park = core::pin::pin!(
                 producer.park_async(&stuck_demand, &state).into_future(),
             );
             let mut cx = Context::from_waker(Waker::noop());

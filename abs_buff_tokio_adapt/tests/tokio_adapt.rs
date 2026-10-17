@@ -2,18 +2,17 @@
 
 use std::{mem::MaybeUninit, pin::Pin};
 
-use abs_buff::{
-    Demand,
-    buffer::{SegmMut, SegmReclaim, SegmRef},
-    x_deps::abs_cancel::{NonCancellableToken, TrMayCancel},
-};
-use abs_buff_testkit::read_initialized;
-use abs_buff_tokio_adapt::{ReadAsInput, WriteAsOutput};
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
 };
 
+use abs_buff::{
+    Demand,
+    buffer::{SegmMut, SegmReclaim, SegmRef},
+};
+use abs_buff_testkit::read_initialized;
+use abs_buff_tokio_adapt::{ReadAsInput, WriteAsOutput};
 
 /// 单元测试：`ReadAsInput` 能把 `AsyncRead` 的数据读入 `SegmMut`。
 #[tokio::test]
@@ -30,8 +29,7 @@ async fn read_as_input_fills_segment() {
     let mut input = ReadAsInput::new(&mut data);
 
     let res = segm
-        .move_items_from_input_async(&mut input, &Demand::less_than(ARR_SIZE))
-        .may_cancel_with(NonCancellableToken::new())
+        .move_items_from_input_async(&mut input, &Demand::no_more_than(ARR_SIZE))
         .await;
 
     let n = res.pick_left().expect("read should succeed");
@@ -57,8 +55,7 @@ async fn write_as_output_drains_segment() {
     let mut output = WriteAsOutput::new(&mut writer);
 
     let res = segm
-        .move_items_to_output_async(&mut output, &Demand::less_than(4))
-        .may_cancel_with(NonCancellableToken::new())
+        .move_items_to_output_async(&mut output, &Demand::no_more_than(4))
         .await;
 
     let n = res.pick_left().expect("write should succeed");
@@ -92,8 +89,7 @@ async fn real_tcp_roundtrip_with_adapters() {
         );
         let mut input = ReadAsInput::new(&mut stream);
         let res = request_segm
-            .move_items_from_input_async(&mut input, &Demand::less_than(4))
-            .may_cancel_with(NonCancellableToken::new())
+            .move_items_from_input_async(&mut input, &Demand::no_more_than(4))
             .await;
         let n = res.pick_left().expect("server read request");
         drop(request_segm);
@@ -114,9 +110,8 @@ async fn real_tcp_roundtrip_with_adapters() {
         let res = response_segm
             .move_items_to_output_async(
                 &mut output,
-                &Demand::less_than(response_len),
+                &Demand::no_more_than(response_len),
             )
-            .may_cancel_with(NonCancellableToken::new())
             .await;
         let written = res.pick_left().expect("server write response");
         assert_eq!(written, response_len);
@@ -140,9 +135,8 @@ async fn real_tcp_roundtrip_with_adapters() {
         let res = send_segm
             .move_items_to_output_async(
                 &mut send_output,
-                &Demand::less_than(payload_len),
+                &Demand::no_more_than(payload_len),
             )
-            .may_cancel_with(NonCancellableToken::new())
             .await;
         let sent = res.pick_left().expect("client send");
         assert_eq!(sent, payload_len);
@@ -159,9 +153,8 @@ async fn real_tcp_roundtrip_with_adapters() {
         let res = response_segm
             .move_items_from_input_async(
                 &mut response_input,
-                &Demand::less_than(4),
+                &Demand::no_more_than(4),
             )
-            .may_cancel_with(NonCancellableToken::new())
             .await;
         let n = res.pick_left().expect("client read response");
         drop(response_segm);
@@ -207,8 +200,7 @@ async fn read_as_input_reports_eof_with_error() {
     );
     let mut input2 = ReadAsInput::new(&mut dev);
     let res = segm
-        .move_items_from_input_async(&mut input2, &Demand::less_than(8))
-        .may_cancel_with(NonCancellableToken::new())
+        .move_items_from_input_async(&mut input2, &Demand::no_more_than(8))
         .await;
     assert!(
         res.as_ref().pick_right().is_some(),
